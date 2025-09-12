@@ -1,0 +1,20 @@
+{
+  # Use the BACKEND_UPSTREAM environment variable provided via Docker
+  # Compose to proxy API requests.  Fallback to localhost:8000 when
+  # undefined.  Caddy v2 supports using {env.*} placeholders.
+  order reverse_proxy 10
+}
+
+:80 {
+  # Serve static files for the SPA
+  root * /usr/share/caddy
+  encode gzip
+  file_server
+
+  # Proxy API requests to the FastAPI backend.  Because the frontend
+  # is built with a relative `/api` base, we must strip the prefix
+  # before forwarding.
+  handle_path /api/* {
+    reverse_proxy {env.BACKEND_UPSTREAM:localhost:8000}
+  }
+}

@@ -1,0 +1,16 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+  Global styles for the EPS admin panel.  Tailwind's preflight resets
+  most defaults, so only minimal overrides are required here.  We also
+  define a dark mode background and text colour when the `dark` class
+  is present on the html element (set by top-level layout based on
+  user preference in the future).  Additional CSS can be placed here
+  or in individual component files if needed.
+*/
+html.dark {
+  background-color: theme('colors.gray.900');
+  color: theme('colors.gray.100');
+}

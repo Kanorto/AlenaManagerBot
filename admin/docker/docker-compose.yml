@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  admin:
+    build:
+      context: ../
+      dockerfile: admin/docker/Dockerfile
+    environment:
+      # This environment variable is consumed by Caddy to know where to
+      # proxy API requests.  It should point to the FastAPI service.
+      BACKEND_UPSTREAM: http://fastapi:8000
+    ports:
+      - '8080:80'
+    depends_on:
+      - fastapi
+
+  fastapi:
+    # Use the provided FastAPI app.  We build it from the local
+    # sources rather than pulling a remote image to ensure the API
+    # matches the generated types.  In production, this image would be
+    # published separately.
+    build:
+      context: ../event_planner_api
+      dockerfile: Dockerfile
+    volumes:
+      - ./event_planner_api:/app
+    environment:
+      - UVICORN_HOST=0.0.0.0
+      - UVICORN_PORT=8000
+    ports:
+      - '8000:8000'
+    command: >-
+      sh -c "uvicorn app.main:app --host $${UVICORN_HOST} --port $${UVICORN_PORT} --reload"

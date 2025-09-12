@@ -1,0 +1,15 @@
+{
+  "modules": {
+    "dashboard": true,
+    "events": true,
+    "users": true,
+    "payments": true,
+    "mailings": true,
+    "support": true,
+    "reviews": true,
+    "messages": true,
+    "faq": true,
+    "settings": true,
+    "audit": true
+  }
+}

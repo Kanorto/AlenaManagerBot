@@ -1,0 +1,5 @@
+admin/node_modules/
+admin/openapi/
+__pycache__/
+*.pyc
+

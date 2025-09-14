@@ -9,6 +9,8 @@ strong hashing algorithm (e.g. bcrypt) in a production system.
 import logging
 from typing import List, Optional
 
+from fastapi import HTTPException, status
+
 from ..schemas.user import UserCreate, UserRead
 
 
@@ -22,9 +24,23 @@ class UserService:
     и транзакционность операций.
     """
 
+    # Supported social providers for messenger-based logins
+    ALLOWED_SOCIAL_PROVIDERS = {"telegram", "vk", "whatsapp"}
+
     # In a DB‑backed implementation, no in‑memory lists are used.  All
     # operations interact with the SQLite database defined in
     # ``core.db``.
+
+    @classmethod
+    def _normalize_provider(cls, provider: str) -> str:
+        """Normalize and validate social provider code."""
+        normalized = provider.strip().lower()
+        if normalized not in cls.ALLOWED_SOCIAL_PROVIDERS:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Unsupported social provider",
+            )
+        return normalized
 
     @classmethod
     async def create_user(cls, data: UserCreate) -> UserRead:
@@ -46,8 +62,18 @@ class UserService:
             is_first = row["count"] == 0
             # If social_provider and social_id provided, treat as messenger user
             if data.social_provider and data.social_id:
+                social_provider = cls._normalize_provider(data.social_provider)
+                # Ensure uniqueness of social provider/ID pair
+                existing = cursor.execute(
+                    "SELECT 1 FROM users WHERE social_provider = ? AND social_id = ?",
+                    (social_provider, data.social_id),
+                ).fetchone()
+                if existing:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="User already exists",
+                    )
                 role_id = 3  # user
-                social_provider = data.social_provider
                 social_id = data.social_id
             else:
                 social_provider = 'internal'
@@ -102,6 +128,48 @@ class UserService:
             raise e
         finally:
             conn.close()
+
+    @classmethod
+    async def social_login(
+        cls, social_provider: str, social_id: str, full_name: Optional[str] = None
+    ) -> UserRead:
+        """Get or create a user based on social provider credentials."""
+
+        provider = cls._normalize_provider(social_provider)
+        from event_planner_api.app.core.db import get_connection
+
+        conn = get_connection()
+        try:
+            cursor = conn.cursor()
+            row = cursor.execute(
+                "SELECT id, email, full_name, disabled FROM users WHERE social_provider = ? AND social_id = ?",
+                (provider, social_id),
+            ).fetchone()
+            if row:
+                if row["disabled"]:
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="User account disabled",
+                    )
+                return UserRead(
+                    id=row["id"],
+                    email=row["email"],
+                    full_name=row["full_name"],
+                    disabled=bool(row["disabled"]),
+                )
+        finally:
+            conn.close()
+
+        # User not found: create new messenger user
+        return await cls.create_user(
+            UserCreate(
+                email=None,
+                full_name=full_name,
+                password=None,
+                social_provider=provider,
+                social_id=social_id,
+            )
+        )
 
     @classmethod
     async def list_users(cls) -> List[UserRead]:

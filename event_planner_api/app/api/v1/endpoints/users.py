@@ -67,47 +67,14 @@ class SocialLogin(BaseModel):
 
 @router.post("/social-login")
 async def social_login(payload: SocialLogin) -> dict:
-    """Authenticate or register a user via social provider and return a token.
+    """Authenticate or register a user via social provider and return a token."""
 
-    This endpoint allows bots or messenger integrations to obtain a JWT
-    without requiring an email/password.  If a user with the given
-    ``social_provider`` and ``social_id`` exists, a new access token is issued.
-    Otherwise a new user is created with role ``user`` (role_id=3) and a
-    token is returned.  The optional ``full_name`` is used only when creating
-    a new user.
-    """
-    # Look up the user by social provider/id
-    from event_planner_api.app.core.db import get_connection
-    from event_planner_api.app.services.user_service import UserService
     from event_planner_api.app.core.security import create_access_token
-    from fastapi import HTTPException
-    conn = get_connection()
-    try:
-        cursor = conn.cursor()
-        row = cursor.execute(
-            "SELECT id, email, full_name, disabled FROM users WHERE social_provider = ? AND social_id = ?",
-            (payload.social_provider, payload.social_id),
-        ).fetchone()
-        if row:
-            if row["disabled"]:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User account disabled")
-            email = row["email"]
-            # Issue new token
-            token = create_access_token({"sub": email})
-            return {"access_token": token, "token_type": "bearer"}
-    finally:
-        conn.close()
-    # If user does not exist, register a new one
-    new_user = await UserService.create_user(
-        UserCreate(
-            email=None,
-            full_name=payload.full_name,
-            password=None,
-            social_provider=payload.social_provider,
-            social_id=payload.social_id,
-        )
+
+    user = await UserService.social_login(
+        payload.social_provider, payload.social_id, payload.full_name
     )
-    token = create_access_token({"sub": new_user.email})
+    token = create_access_token({"sub": user.email})
     return {"access_token": token, "token_type": "bearer"}
 
 

@@ -200,12 +200,15 @@ class TelegramEventBot:
         if self.message_cache:
             return
         logger.info("Loading message templates from API...")
-        messages = self.api.get_messages()
+        messages, error = self.api.get_messages()
         if messages:
             self.message_cache = messages
             logger.info("Loaded %d message templates", len(messages))
         else:
-            logger.warning("Failed to load message templates or none available")
+            if error:
+                logger.warning("Failed to load message templates: %s", error.get("message"))
+            else:
+                logger.warning("Failed to load message templates or none available")
 
     def _get_message(self, key: str, default: Optional[str] = None) -> str:
         """Retrieve a message template by key with optional fallback.
@@ -239,12 +242,16 @@ class TelegramEventBot:
                 "first_name": user.get("first_name"),
                 "last_name": user.get("last_name"),
             }
-            backend_user = self.api.register_user(payload)
+            backend_user, error = self.api.register_user(payload)
             if backend_user:
                 self.user_registry[user_id] = backend_user
                 logger.info("Registered new user %s", user_id)
             else:
-                logger.warning("Failed to register user %s via API", user_id)
+                if error:
+                    logger.warning("Failed to register user %s via API: %s", user_id, error.get("message"))
+                else:
+                    logger.warning("Failed to register user %s via API", user_id)
+                self._send_message(chat_id, self._get_message("register_user_fail", default="⚠️ Could not register you right now."))
         welcome_msg = self._get_message(
             "welcome",
             default=(
@@ -278,7 +285,14 @@ class TelegramEventBot:
 
     def _handle_events(self, chat_id: int) -> None:
         """Retrieve and display a list of events."""
-        events = self.api.list_events()
+        events, error = self.api.list_events()
+        if error:
+            logger.warning("Failed to list events: %s", error.get("message"))
+            text = self._get_message(
+                "events_error", default="Unable to load events right now. Please try again later."
+            )
+            self._send_message(chat_id, text)
+            return
         if not events:
             text = self._get_message(
                 "no_events", default="There are no upcoming events at the moment."
@@ -316,13 +330,15 @@ class TelegramEventBot:
             self._send_message(chat_id, "Usage: /register <event_id>")
             return
         payload = {"telegram_id": user_id}
-        result = self.api.register_for_event(event_id, payload)
-        if result is not None:
+        result, error = self.api.register_for_event(event_id, payload)
+        if result is not None and not error:
             text = self._get_message(
                 "registration_success",
                 default=f"✅ You have been registered for event {event_id}.",
             )
         else:
+            if error:
+                logger.warning("Registration failed for event %s: %s", event_id, error.get("message"))
             text = self._get_message(
                 "registration_failure",
                 default=f"❌ Failed to register for event {event_id}. Please try again later.",
@@ -340,13 +356,15 @@ class TelegramEventBot:
         if not registration_id:
             self._send_message(chat_id, "Usage: /cancel <registration_id>")
             return
-        ok = self.api.cancel_registration(registration_id)
+        ok, error = self.api.cancel_registration(registration_id)
         if ok:
             text = self._get_message(
                 "cancellation_success",
                 default=f"✅ Registration {registration_id} has been cancelled.",
             )
         else:
+            if error:
+                logger.warning("Cancellation failed for %s: %s", registration_id, error.get("message"))
             text = self._get_message(
                 "cancellation_failure",
                 default=f"❌ Failed to cancel registration {registration_id}.",
@@ -365,10 +383,12 @@ class TelegramEventBot:
             "subject": "Broadcast",  # Could be customised
             "body": args.strip(),
         }
-        result = self.api.create_mailing(payload)
-        if result is not None:
+        result, error = self.api.create_mailing(payload)
+        if result is not None and not error:
             self._send_message(chat_id, "📢 Broadcast sent successfully.")
         else:
+            if error:
+                logger.warning("Broadcast failed: %s", error.get("message"))
             self._send_message(chat_id, "❌ Failed to send broadcast.")
 
     def _handle_messages_refresh(self, chat_id: int) -> None:
@@ -617,7 +637,11 @@ class TelegramEventBot:
     # ------------------------------------------------------------------
     def _handle_events_menu(self, chat_id: int) -> None:
         """Display events with inline registration buttons."""
-        events = self.api.list_events()
+        events, error = self.api.list_events()
+        if error:
+            logger.warning("Failed to list events: %s", error.get("message"))
+            self._send_message(chat_id, self._get_message("events_error", default="Unable to load events right now."))
+            return
         if not events:
             self._send_message(chat_id, self._get_message("no_events", default="There are no upcoming events."))
             return
@@ -681,7 +705,11 @@ class TelegramEventBot:
 
     def _handle_faq(self, chat_id: int) -> None:
         """Display the frequently asked questions."""
-        faq_entries = self.api.get_faq()
+        faq_entries, error = self.api.get_faq()
+        if error:
+            logger.warning("Failed to fetch FAQ: %s", error.get("message"))
+            self._send_message(chat_id, self._get_message("faq_error", default="Unable to load FAQ right now."))
+            return
         if not faq_entries:
             self._send_message(chat_id, self._get_message("no_faq", default="No FAQ available at the moment."))
             return
@@ -699,7 +727,11 @@ class TelegramEventBot:
 
     def _handle_bookings(self, chat_id: int, user_id: int) -> None:
         """Display the current user's registrations."""
-        bookings = self.api.get_user_registrations(user_id)
+        bookings, error = self.api.get_user_registrations(user_id)
+        if error:
+            logger.warning("Failed to retrieve bookings for %s: %s", user_id, error.get("message"))
+            self._send_message(chat_id, self._get_message("bookings_error", default="Unable to load your registrations."))
+            return
         if not bookings:
             self._send_message(chat_id, self._get_message("no_bookings", default="You have no active registrations."))
             return
@@ -758,16 +790,18 @@ class TelegramEventBot:
             "telegram_id": user_id,
             "message": text,
         }
-        result = self.api.create_support_message(payload)
+        result, error = self.api.create_support_message(payload)
         # Forward to admin chat if configured
         if self.admin_chat_id and chat_id != self.admin_chat_id:
             sender_name = from_user.get('username') or from_user.get('first_name') or 'unknown'
             forward_text = f"📩 Support request from {sender_name}:\n{text}"
             self._send_message(self.admin_chat_id, forward_text)
         # Send acknowledgement to user
-        if result is not None:
+        if result is not None and not error:
             ack = self._get_message("support_ack", default="Your request has been received. Our team will respond shortly.")
         else:
+            if error:
+                logger.warning("Support message failed: %s", error.get("message"))
             ack = self._get_message("support_fail", default="There was an issue submitting your request. Please try again later.")
         self._send_message(chat_id, ack)
         # Clear state
@@ -785,10 +819,12 @@ class TelegramEventBot:
             "telegram_id": user_id,
             "feedback": text,
         }
-        result = self.api.create_feedback(payload)
-        if result is not None:
+        result, error = self.api.create_feedback(payload)
+        if result is not None and not error:
             ack = self._get_message("feedback_ack", default="Thank you for your feedback!")
         else:
+            if error:
+                logger.warning("Feedback submission failed: %s", error.get("message"))
             ack = self._get_message("feedback_fail", default="Failed to submit feedback. Please try again later.")
         self._send_message(chat_id, ack)
         self.user_states.pop(user_id, None)
@@ -880,7 +916,9 @@ class TelegramEventBot:
         seats_remaining: Optional[int] = None
         try:
             if hasattr(self.api, "get_event") and event_id is not None:
-                event_details = self.api.get_event(event_id)
+                event_details, error = self.api.get_event(event_id)
+                if error:
+                    logger.warning("Failed to fetch event %s: %s", event_id, error.get("message"))
                 if isinstance(event_details, dict):
                     capacity = event_details.get("capacity") or event_details.get("max_participants")
                     registered = event_details.get("registered_count") or event_details.get("participants")
@@ -903,19 +941,25 @@ class TelegramEventBot:
         waitlisted_names: list[str] = []
         for display_name, payload in participants_info:
             if seats_remaining > 0:
-                result = self.api.register_for_event(event_id, payload)
-                if result is not None:
+                result, error = self.api.register_for_event(event_id, payload)
+                if result is not None and not error:
                     registered_names.append(display_name)
                     seats_remaining -= 1
                 else:
+                    if error:
+                        logger.warning("Registration failed for %s: %s", display_name, error.get("message"))
                     # If registration fails, fall back to waitlist
-                    wl_result = self.api.join_waitlist(event_id, payload)
-                    if wl_result is not None:
+                    wl_result, wl_error = self.api.join_waitlist(event_id, payload)
+                    if wl_result is not None and not wl_error:
                         waitlisted_names.append(display_name)
+                    elif wl_error:
+                        logger.warning("Waitlist add failed for %s: %s", display_name, wl_error.get("message"))
             else:
-                wl_result = self.api.join_waitlist(event_id, payload)
-                if wl_result is not None:
+                wl_result, wl_error = self.api.join_waitlist(event_id, payload)
+                if wl_result is not None and not wl_error:
                     waitlisted_names.append(display_name)
+                elif wl_error:
+                    logger.warning("Waitlist add failed for %s: %s", display_name, wl_error.get("message"))
         # Compose summary message
         summary_lines = []
         if registered_names:
@@ -958,11 +1002,12 @@ class TelegramEventBot:
             participants.append({})
         # Attempt multi‑registration
         result = None
+        error = None
         if count > 1:
-            result = self.api.register_multiple(event_id, participants)
+            result, error = self.api.register_multiple(event_id, participants)
         else:
-            result = self.api.register_for_event(event_id, {"telegram_id": user_id})
-        if result is not None:
+            result, error = self.api.register_for_event(event_id, {"telegram_id": user_id})
+        if result is not None and not error:
             # Registration succeeded.  Determine whether payment is required by
             # inspecting the returned object.  For example the API might
             # return a field like 'price' or 'is_paid'.
@@ -1006,23 +1051,29 @@ class TelegramEventBot:
                 except requests.RequestException as exc:
                     logger.error("Telegram sendMessage (payment prompt) error: %s", exc)
         else:
+            if error:
+                logger.warning("Registration failed: %s", error.get("message"))
             self._send_message(chat_id, self._get_message("registration_failure", default="❌ Failed to register. Please try again later."))
         # Clear state after registration
         self.user_states.pop(user_id, None)
 
     def _handle_cancel_via_callback(self, chat_id: int, registration_id: Any) -> None:
         """Cancel a registration from an inline button."""
-        ok = self.api.cancel_registration(registration_id)
+        ok, error = self.api.cancel_registration(registration_id)
         if ok:
             self._send_message(chat_id, self._get_message("cancellation_success", default="✅ Registration has been cancelled."))
         else:
+            if error:
+                logger.warning("Cancellation via callback failed for %s: %s", registration_id, error.get("message"))
             self._send_message(chat_id, self._get_message("cancellation_failure", default="❌ Failed to cancel registration."))
 
     def _handle_payment(self, chat_id: int, registration_id: Any) -> None:
         """Initiate a payment for a registration and return payment instructions."""
         # Call API to start payment.  The API may return a URL or invoice details.
-        result = self.api.initiate_payment(registration_id)
-        if result is None:
+        result, error = self.api.initiate_payment(registration_id)
+        if result is None or error:
+            if error:
+                logger.warning("Payment initiation failed for %s: %s", registration_id, error.get("message"))
             self._send_message(chat_id, self._get_message("payment_init_fail", default="❌ Could not initiate payment."))
             return
         # Inspect result for a payment link or invoice
@@ -1059,10 +1110,12 @@ class TelegramEventBot:
     def _handle_join_waitlist(self, chat_id: int, user_id: int, event_id: Any) -> None:
         """Join the waiting list for a full event."""
         payload = {"telegram_id": user_id}
-        result = self.api.join_waitlist(event_id, payload)
-        if result is not None:
+        result, error = self.api.join_waitlist(event_id, payload)
+        if result is not None and not error:
             self._send_message(chat_id, self._get_message("waitlist_joined", default="You have been added to the waiting list."))
         else:
+            if error:
+                logger.warning("Waitlist join failed for event %s: %s", event_id, error.get("message"))
             self._send_message(chat_id, self._get_message("waitlist_failed", default="Failed to join waiting list. Please try again later."))
 
     # ------------------------------------------------------------------

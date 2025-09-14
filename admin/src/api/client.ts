@@ -22,16 +22,37 @@ export async function apiFetch<T>(
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
-  const response = await fetch(`${baseUrl}${input}`, {
-    ...init,
-    headers,
-  });
 
-  // Optional debug logging: emit request and response info to the console.
-  // This helps diagnose connectivity issues when developing.  Adjust the
-  // log level or remove in production if not needed.
+  // Log the request details before sending.  Wrapped in try/catch to
+  // avoid errors in environments where console is undefined.
   try {
     console.debug('apiFetch request', input, init);
+  } catch {
+    // console methods may not be available in all environments
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(`${baseUrl}${input}`, {
+      ...init,
+      headers,
+    });
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : String(err);
+    try {
+      console.error('apiFetch fetch error', message);
+    } catch {
+      // noop
+    }
+    addNotification(message, 'error');
+    throw new Error(`Network error while fetching ${input}: ${message}`);
+  }
+
+  // Optional debug logging: emit response info to the console.  This helps
+  // diagnose connectivity issues when developing.  Adjust the log level or
+  // remove in production if not needed.
+  try {
     console.debug('apiFetch response', response.status, response.statusText);
   } catch {
     // console methods may not be available in all environments

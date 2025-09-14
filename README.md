@@ -21,3 +21,7 @@ When the API schema changes:
 The admin build and the Telegram bot both read the specification from `/openapi.json`.
 Removing the now redundant `admin/openapi/openapi.json` prevents the specification
 from diverging in the future.
+
+## Security considerations
+
+Authentication tokens for the admin panel are stored in `sessionStorage`. This keeps credentials scoped to the current browser tab and clears them when the session ends. Avoid using `localStorage` for long-term persistence, since data there survives browser restarts and is more vulnerable to theft via cross-site scripting.

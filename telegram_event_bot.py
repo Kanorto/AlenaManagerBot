@@ -140,13 +140,21 @@ class TelegramEventBot:
             logger.error("Telegram getUpdates error: %s", exc)
         return []
 
-    def _send_message(self, chat_id: int, text: str, *, parse_mode: Optional[str] = None) -> None:
+    def _send_message(
+        self,
+        chat_id: int,
+        text: str,
+        *,
+        parse_mode: Optional[str] = None,
+        reply_markup: Optional[Dict[str, Any]] = None,
+    ) -> None:
         """Send a plain text message to a Telegram chat.
 
         Args:
             chat_id: The target chat ID.
             text: The message content.
             parse_mode: Optional Telegram parse mode (e.g. 'Markdown').
+            reply_markup: Optional reply markup (e.g. keyboards).
         """
         url = f"{self.telegram_api_url}/sendMessage"
         payload: Dict[str, Any] = {
@@ -155,6 +163,8 @@ class TelegramEventBot:
         }
         if parse_mode:
             payload["parse_mode"] = parse_mode
+        if reply_markup:
+            payload["reply_markup"] = reply_markup
         try:
             resp = requests.post(url, json=payload, timeout=10)
             resp.raise_for_status()
@@ -411,19 +421,11 @@ class TelegramEventBot:
             "resize_keyboard": True,
             "one_time_keyboard": False,
         }
-        # Send menu as separate message to avoid interfering with previous text
-        self._send_message(chat_id, self._get_message("menu_prompt", default="Please choose an option:"))
-        try:
-            url = f"{self.telegram_api_url}/sendMessage"
-            payload = {
-                "chat_id": chat_id,
-                "text": "",
-                "reply_markup": reply_markup,
-            }
-            resp = requests.post(url, json=payload, timeout=10)
-            resp.raise_for_status()
-        except requests.RequestException as exc:
-            logger.error("Telegram sendMessage with keyboard error: %s", exc)
+        self._send_message(
+            chat_id,
+            self._get_message("menu_prompt", default="Please choose an option:"),
+            reply_markup=reply_markup,
+        )
 
     # ------------------------------------------------------------------
     # Update dispatcher

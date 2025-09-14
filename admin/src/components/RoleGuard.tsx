@@ -1,6 +1,7 @@
 import React from 'react';
 import { useAuth } from '../store/auth';
 import { useNavigate } from '@tanstack/react-router';
+import { useNotifications } from '../store/notifications';
 
 /**
  * Higher‑order component that protects a page based on the user's role.
@@ -21,6 +22,7 @@ export function withRoleGuard<P>(
   const Guarded: React.FC<P> = (props) => {
     const { roleId, token } = useAuth();
     const navigate = useNavigate();
+    const { addNotification } = useNotifications();
     // Determine if the user lacks sufficient privileges.  Lower
     // numbers are more privileged (1 = super admin).  We compute
     // this outside of the effect so that hooks are not called
@@ -28,15 +30,16 @@ export function withRoleGuard<P>(
     const unauthorized =
       requiredRole !== undefined && (roleId == null || roleId > requiredRole);
 
-    // When the user is unauthorised, redirect them to the home page.
+    // When the user is unauthorised, notify and redirect them to the login page.
     React.useEffect(() => {
       if (unauthorized) {
-        navigate({ to: '/' });
+        addNotification('Access denied', 'error');
+        navigate({ to: '/login' });
       }
-    }, [unauthorized, navigate]);
+    }, [unauthorized, navigate, addNotification]);
 
     if (unauthorized) {
-      return null;
+      return <div className="p-4 text-center">Access denied</div>;
     }
     return <Component {...props} />;
   };

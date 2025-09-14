@@ -51,6 +51,7 @@ import logging
 import os
 import sys
 import time
+import random
 from typing import Any, Dict, Optional
 
 import requests
@@ -111,10 +112,74 @@ class TelegramEventBot:
         # ``_send_main_menu`` using the current message cache.  This
         # avoids loading messages prematurely during initialisation.
         self.menu_labels: Optional[Dict[str, str]] = None
+        # Counter for consecutive request failures to implement
+        # exponential backoff between retries
+        self.retry_attempts = 0
 
     # ------------------------------------------------------------------
     # Telegram API helpers
     # ------------------------------------------------------------------
+    def _reset_backoff(self) -> None:
+        """Reset the retry attempt counter after a successful request."""
+        self.retry_attempts = 0
+
+    def _sleep_backoff(self, resp: Optional[requests.Response] = None) -> None:
+        """Sleep for an exponentially increasing interval with jitter.
+
+        If a ``Retry-After`` header is present on a 429 response it is
+        respected.  Otherwise the delay doubles with each attempt up to a
+        ceiling of 60 seconds and a random jitter is added to avoid
+        thundering herds.
+        """
+        self.retry_attempts += 1
+        delay = None
+        if resp is not None and resp.status_code == 429:
+            retry_after = resp.headers.get("Retry-After")
+            if retry_after is not None:
+                try:
+                    delay = float(retry_after)
+                except ValueError:
+                    pass
+        if delay is None:
+            delay = min(2 ** (self.retry_attempts - 1), 60) + random.random()
+        logger.warning(
+            "Request failure #%d, sleeping %.1fs before retry", self.retry_attempts, delay
+        )
+        time.sleep(delay)
+
+    def _telegram_request(
+        self,
+        http_method: str,
+        method: str,
+        *,
+        params: Optional[Dict[str, Any]] = None,
+        payload: Optional[Dict[str, Any]] = None,
+        timeout: int = 10,
+    ) -> Optional[Dict[str, Any]]:
+        """Perform a request against the Telegram API with retries."""
+        url = f"{self.telegram_api_url}/{method}"
+        while True:
+            try:
+                resp = requests.request(
+                    http_method,
+                    url,
+                    params=params,
+                    json=payload,
+                    timeout=timeout,
+                )
+                if resp.status_code == 429:
+                    self._sleep_backoff(resp)
+                    continue
+                resp.raise_for_status()
+                self._reset_backoff()
+                try:
+                    return resp.json()
+                except ValueError:
+                    return None
+            except requests.RequestException as exc:
+                resp = getattr(exc, "response", None)
+                logger.error("Telegram %s error: %s", method, exc)
+                self._sleep_backoff(resp)
     def _get_updates(self, timeout: int = 30) -> list[Dict[str, Any]]:
         """Request new updates from Telegram.
 
@@ -128,16 +193,13 @@ class TelegramEventBot:
             "timeout": timeout,
             "offset": self.last_update_id + 1,
         }
-        url = f"{self.telegram_api_url}/getUpdates"
-        try:
-            resp = requests.get(url, params=params, timeout=timeout + 5)
-            resp.raise_for_status()
-            data = resp.json()
-            if data.get("ok"):
-                return data.get("result", [])
+        data = self._telegram_request(
+            "get", "getUpdates", params=params, timeout=timeout + 5
+        )
+        if isinstance(data, dict) and data.get("ok"):
+            return data.get("result", [])
+        if data:
             logger.error("Telegram getUpdates failed: %s", data)
-        except requests.RequestException as exc:
-            logger.error("Telegram getUpdates error: %s", exc)
         return []
 
     def _send_message(self, chat_id: int, text: str, *, parse_mode: Optional[str] = None) -> None:
@@ -148,21 +210,15 @@ class TelegramEventBot:
             text: The message content.
             parse_mode: Optional Telegram parse mode (e.g. 'Markdown').
         """
-        url = f"{self.telegram_api_url}/sendMessage"
         payload: Dict[str, Any] = {
             "chat_id": chat_id,
             "text": text,
         }
         if parse_mode:
             payload["parse_mode"] = parse_mode
-        try:
-            resp = requests.post(url, json=payload, timeout=10)
-            resp.raise_for_status()
-            data = resp.json()
-            if not data.get("ok"):
-                logger.error("Telegram sendMessage failed: %s", data)
-        except requests.RequestException as exc:
-            logger.error("Telegram sendMessage error: %s", exc)
+        data = self._telegram_request("post", "sendMessage", payload=payload)
+        if data and not data.get("ok"):
+            logger.error("Telegram sendMessage failed: %s", data)
 
     def _forward_message(self, chat_id: int, from_chat_id: int, message_id: int) -> None:
         """Forward a message to another chat.
@@ -172,20 +228,14 @@ class TelegramEventBot:
             from_chat_id: Original chat ID of the message.
             message_id: Identifier of the original message.
         """
-        url = f"{self.telegram_api_url}/forwardMessage"
         payload = {
             "chat_id": chat_id,
             "from_chat_id": from_chat_id,
             "message_id": message_id,
         }
-        try:
-            resp = requests.post(url, json=payload, timeout=10)
-            resp.raise_for_status()
-            data = resp.json()
-            if not data.get("ok"):
-                logger.error("Telegram forwardMessage failed: %s", data)
-        except requests.RequestException as exc:
-            logger.error("Telegram forwardMessage error: %s", exc)
+        data = self._telegram_request("post", "forwardMessage", payload=payload)
+        if data and not data.get("ok"):
+            logger.error("Telegram forwardMessage failed: %s", data)
 
     # ------------------------------------------------------------------
     # Message caching
@@ -413,17 +463,12 @@ class TelegramEventBot:
         }
         # Send menu as separate message to avoid interfering with previous text
         self._send_message(chat_id, self._get_message("menu_prompt", default="Please choose an option:"))
-        try:
-            url = f"{self.telegram_api_url}/sendMessage"
-            payload = {
-                "chat_id": chat_id,
-                "text": "",
-                "reply_markup": reply_markup,
-            }
-            resp = requests.post(url, json=payload, timeout=10)
-            resp.raise_for_status()
-        except requests.RequestException as exc:
-            logger.error("Telegram sendMessage with keyboard error: %s", exc)
+        payload = {
+            "chat_id": chat_id,
+            "text": "",
+            "reply_markup": reply_markup,
+        }
+        self._telegram_request("post", "sendMessage", payload=payload)
 
     # ------------------------------------------------------------------
     # Update dispatcher
@@ -606,11 +651,10 @@ class TelegramEventBot:
         """Acknowledge a callback query to remove the loading state in Telegram clients."""
         if not callback_id:
             return
-        url = f"{self.telegram_api_url}/answerCallbackQuery"
-        try:
-            requests.post(url, json={"callback_query_id": callback_id}, timeout=5)
-        except requests.RequestException:
-            pass
+        payload = {"callback_query_id": callback_id}
+        self._telegram_request(
+            "post", "answerCallbackQuery", payload=payload, timeout=5
+        )
 
     # ------------------------------------------------------------------
     # High‑level handlers for menu actions
@@ -667,17 +711,12 @@ class TelegramEventBot:
         # Send event list with inline keyboard
         text = "\n".join(message_lines)
         reply_markup = {"inline_keyboard": inline_keyboard}
-        url = f"{self.telegram_api_url}/sendMessage"
         payload = {
             "chat_id": chat_id,
             "text": text,
             "reply_markup": reply_markup,
         }
-        try:
-            resp = requests.post(url, json=payload, timeout=10)
-            resp.raise_for_status()
-        except requests.RequestException as exc:
-            logger.error("Telegram sendMessage (events) error: %s", exc)
+        self._telegram_request("post", "sendMessage", payload=payload)
 
     def _handle_faq(self, chat_id: int) -> None:
         """Display the frequently asked questions."""
@@ -737,13 +776,8 @@ class TelegramEventBot:
             "text": "\n".join(lines),
             "reply_markup": {"inline_keyboard": inline_keyboard} if inline_keyboard else None,
         }
-        # Use json parameter and handle None by omitting reply_markup
-        try:
-            url = f"{self.telegram_api_url}/sendMessage"
-            resp = requests.post(url, json={k: v for k, v in payload.items() if v is not None}, timeout=10)
-            resp.raise_for_status()
-        except requests.RequestException as exc:
-            logger.error("Telegram sendMessage (bookings) error: %s", exc)
+        payload = {k: v for k, v in payload.items() if v is not None}
+        self._telegram_request("post", "sendMessage", payload=payload)
 
     def _prompt_support(self, chat_id: int, user_id: int) -> None:
         """Prompt the user to enter their support message."""
@@ -815,12 +849,7 @@ class TelegramEventBot:
             "text": self._get_message("select_count", default="How many participants would you like to register?"),
             "reply_markup": {"inline_keyboard": inline_keyboard},
         }
-        try:
-            url = f"{self.telegram_api_url}/sendMessage"
-            resp = requests.post(url, json=payload, timeout=10)
-            resp.raise_for_status()
-        except requests.RequestException as exc:
-            logger.error("Telegram sendMessage (participant count) error: %s", exc)
+        self._telegram_request("post", "sendMessage", payload=payload)
 
     # ------------------------------------------------------------------
     # Multi‑registration name collection helpers
@@ -996,15 +1025,13 @@ class TelegramEventBot:
                 }]]
                 payload = {
                     "chat_id": chat_id,
-                    "text": self._get_message("payment_required", default="Payment is required for this registration."),
+                    "text": self._get_message(
+                        "payment_required",
+                        default="Payment is required for this registration.",
+                    ),
                     "reply_markup": {"inline_keyboard": inline_keyboard},
                 }
-                try:
-                    url = f"{self.telegram_api_url}/sendMessage"
-                    resp = requests.post(url, json=payload, timeout=10)
-                    resp.raise_for_status()
-                except requests.RequestException as exc:
-                    logger.error("Telegram sendMessage (payment prompt) error: %s", exc)
+                self._telegram_request("post", "sendMessage", payload=payload)
         else:
             self._send_message(chat_id, self._get_message("registration_failure", default="❌ Failed to register. Please try again later."))
         # Clear state after registration
@@ -1039,15 +1066,13 @@ class TelegramEventBot:
             }]]
             payload = {
                 "chat_id": chat_id,
-                "text": self._get_message("payment_prompt", default="Please complete the payment using the link below."),
+                "text": self._get_message(
+                    "payment_prompt",
+                    default="Please complete the payment using the link below.",
+                ),
                 "reply_markup": {"inline_keyboard": inline_keyboard},
             }
-            try:
-                url = f"{self.telegram_api_url}/sendMessage"
-                resp = requests.post(url, json=payload, timeout=10)
-                resp.raise_for_status()
-            except requests.RequestException as exc:
-                logger.error("Telegram sendMessage (payment link) error: %s", exc)
+            self._telegram_request("post", "sendMessage", payload=payload)
         elif invoice:
             # If invoice details are provided, include them directly in the message
             message = self._get_message("payment_invoice", default="Please pay according to the invoice below:") + "\n" + str(invoice)

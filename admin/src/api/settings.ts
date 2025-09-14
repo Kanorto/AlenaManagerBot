@@ -1,15 +1,8 @@
 import { apiFetch } from './client';
+import type { operations } from './types.gen';
 
-/**
- * Represents a single application setting.  The backend stores settings
- * as key/value pairs with an associated type.  Keys may be namespaced
- * (e.g. ``booking.waitlist_delay``) but are returned as a flat list.
- */
-export interface Setting {
-  key: string;
-  value: unknown;
-  type: string;
-}
+export type Setting =
+  operations['list_settings_api_v1_settings__get']['responses'][200]['content']['application/json'][number];
 
 /** Fetch all settings.  Only super administrators can access this endpoint. */
 export async function getSettings(): Promise<Setting[]> {

@@ -1,22 +1,10 @@
 import { apiFetch } from './client';
+import type { operations } from './types.gen';
 
-/** Query parameters for retrieving audit logs. */
-export interface AuditQueryParams {
-  user_id?: number | null;
-  object_type?: string | null;
-  action?: string | null;
-  start_date?: string | null;
-  end_date?: string | null;
-  limit?: number;
-  offset?: number;
-}
-
-/** The audit log API returns arbitrary JSON objects describing actions taken
- * within the system.  Each record typically includes fields such as
- * ``id``, ``user_id``, ``object_type``, ``object_id``, ``action`` and
- * ``timestamp``, but the schema is not formally defined.  We use a
- * catch-all type here and let consumers handle fields dynamically. */
-export type AuditLog = Record<string, unknown>;
+export type AuditQueryParams =
+  operations['list_audit_logs_api_v1_audit_logs_get']['parameters']['query'];
+export type AuditLog =
+  operations['list_audit_logs_api_v1_audit_logs_get']['responses'][200]['content']['application/json'][number];
 
 /**
  * Retrieve a list of audit logs filtered by optional parameters.

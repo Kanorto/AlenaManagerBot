@@ -1,61 +1,14 @@
 import { apiFetch } from './client';
+import type { components, operations } from './types.gen';
 
-/**
- * Interfaces describing the shape of mailing data returned from the API.
- * The backend returns ISO timestamps for created_at and scheduled_at fields
- * and allows an arbitrary JSON object for filters.  When creating or
- * updating a mailing the frontend may supply a subset of these fields.
- */
-export interface Mailing {
-  id: number;
-  created_by: number;
-  title: string;
-  content: string;
-  /** Criteria to select recipients, stored as an arbitrary object */
-  filters: Record<string, unknown> | null;
-  /** ISO 8601 datetime when the mailing is scheduled to send, or null */
-  scheduled_at: string | null;
-  /** ISO 8601 datetime when the mailing was created */
-  created_at: string;
-  /** List of messenger channels to send through (e.g. ['telegram']) */
-  messengers: string[] | null;
-}
-
-/** Schema for creating a new mailing.  Only title and content are required. */
-export interface MailingCreate {
-  title: string;
-  content: string;
-  filters?: Record<string, unknown> | null;
-  scheduled_at?: string | null;
-  messengers?: string[] | null;
-}
-
-/** Schema for updating an existing mailing.  All fields are optional. */
-export interface MailingUpdate {
-  title?: string | null;
-  content?: string | null;
-  filters?: Record<string, unknown> | null;
-  scheduled_at?: string | null;
-  messengers?: string[] | null;
-}
-
-/** Shape of an individual mailing log entry returned by the API. */
-export interface MailingLog {
-  id: number;
-  mailing_id: number;
-  user_id: number;
-  status: string;
-  error_message: string | null;
-  sent_at: string;
-}
-
-/** Parameters for querying the list of mailings.  All fields are optional. */
-export interface MailingsQueryParams {
-  limit?: number;
-  offset?: number;
-  sort_by?: string | null;
-  order?: string | null;
-}
+export type Mailing = components['schemas']['MailingRead'];
+export type MailingCreate = components['schemas']['MailingCreate'];
+export type MailingUpdate = components['schemas']['MailingUpdate'];
+export type MailingLog = components['schemas']['MailingLogRead'];
+export type MailingsQueryParams =
+  NonNullable<operations['list_mailings_api_v1_mailings__get']['parameters']['query']>;
+export type MailingLogsQueryParams =
+  NonNullable<operations['get_logs_api_v1_mailings__mailing_id__logs_get']['parameters']['query']>;
 
 /**
  * Retrieve a list of mailings.  Results may be paginated and sorted via
@@ -110,7 +63,7 @@ export async function sendMailing(id: number): Promise<number> {
 /** Retrieve delivery logs for a mailing.  Results may be paginated. */
 export async function getMailingLogs(
   id: number,
-  params: { limit?: number; offset?: number } = {},
+  params: MailingLogsQueryParams = {},
 ): Promise<MailingLog[]> {
   const search = new URLSearchParams();
   if (params.limit !== undefined) search.set('limit', String(params.limit));

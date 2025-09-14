@@ -1,39 +1,14 @@
 import { apiFetch } from './client';
+import type { operations } from './types.gen';
 
-/**
- * Representation of a role returned by the API.  Roles have an id,
- * name and optional permissions payload.  The shape of ``permissions``
- * is not strictly defined in the spec and may be a JSON object or
- * array of strings.  Additional fields may be returned by the
- * backend in the future.
- */
-export interface Role {
-  id: number;
-  name: string;
-  permissions?: unknown;
-  [key: string]: unknown;
-}
-
-/**
- * Payload for creating a new role.  The ``name`` field is required
- * and should be unique.  ``permissions`` may be provided as an
- * array of strings describing the allowed actions.
- */
-export interface RoleCreate {
-  name: string;
-  permissions?: string[];
-}
-
-/**
- * Payload for updating an existing role.  Any of the fields may
- * optionally be specified.  Undefined values are omitted from the
- * request body so that only explicitly provided fields are
- * modified.
- */
-export interface RoleUpdate {
-  name?: string;
-  permissions?: string[];
-}
+export type Role =
+  operations['list_roles_api_v1_roles__get']['responses'][200]['content']['application/json'][number];
+export type RoleCreate =
+  operations['create_role_api_v1_roles__post']['requestBody']['content']['application/json'];
+export type RoleUpdate =
+  operations['update_role_api_v1_roles__role_id__put']['requestBody']['content']['application/json'];
+export type RoleAssignPayload =
+  operations['assign_role_api_v1_roles_assign_post']['requestBody']['content']['application/json'];
 
 /**
  * Fetch a list of roles from the backend.  Only super
@@ -82,10 +57,6 @@ export async function deleteRole(id: number): Promise<void> {
  * backend returns no content on success.  Only super
  * administrators may assign roles.
  */
-export interface RoleAssignPayload {
-  user_id: number;
-  role_id: number;
-}
 export async function assignRole(payload: RoleAssignPayload): Promise<void> {
   await apiFetch<void>('/api/v1/roles/assign', {
     method: 'POST',

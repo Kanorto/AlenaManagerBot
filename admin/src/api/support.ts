@@ -1,58 +1,14 @@
 import { apiFetch } from './client';
+import type { components, operations } from './types.gen';
 
-/**
- * Represents a support ticket without its message thread.  Status
- * values are strings such as 'open', 'in_progress', 'resolved'
- * and 'closed'.  Only administrators can view all tickets.
- */
-export interface SupportTicket {
-  id: number;
-  user_id: number;
-  subject: string | null;
-  status: string;
-  created_at: string;
-  updated_at: string;
-}
-
-/** Input schema for creating a support ticket.  Users supply a
- * subject and initial message content. */
-export interface SupportTicketCreate {
-  subject: string;
-  content: string;
-}
-
-/** Input schema for updating the status of a ticket. */
-export interface SupportTicketUpdate {
-  status: string;
-}
-
-/** Represents an individual message on a ticket.  Sender_role
- * identifies whether the message was authored by a user or admin. */
-export interface SupportMessage {
-  id: number;
-  ticket_id: number;
-  content: string;
-  created_at: string;
-  sender_role: string;
-  user_id?: number | null;
-  admin_id?: number | null;
-  attachments?: string[] | null;
-}
-
-/** Composite return type for ticket details and its messages. */
-export interface TicketWithMessages {
-  ticket: SupportTicket;
-  messages: SupportMessage[];
-}
-
-/** Query parameters for listing tickets. */
-export interface TicketsQueryParams {
-  status?: string | null;
-  limit?: number;
-  offset?: number;
-  sort_by?: string | null;
-  order?: string | null;
-}
+export type SupportTicket = components['schemas']['SupportTicketRead'];
+export type SupportTicketCreate = components['schemas']['SupportTicketCreate'];
+export type SupportTicketUpdate = components['schemas']['SupportTicketUpdate'];
+export type SupportMessage = components['schemas']['SupportMessageRead'];
+export type SupportMessageCreate = components['schemas']['SupportMessageCreate'];
+export type TicketWithMessages = components['schemas']['TicketWithMessages'];
+export type TicketsQueryParams =
+  NonNullable<operations['list_tickets_api_v1_support_tickets_get']['parameters']['query']>;
 
 /**
  * List support tickets visible to the current user.  Administrators can
@@ -94,7 +50,7 @@ export async function getTicketWithMessages(id: number): Promise<TicketWithMessa
 /** Reply to a support ticket.  Returns the created message. */
 export async function replyToTicket(
   id: number,
-  data: { content: string; attachments?: string[] | null },
+  data: SupportMessageCreate,
 ): Promise<SupportMessage> {
   return apiFetch<SupportMessage>(`/api/v1/support/tickets/${id}/reply`, {
     method: 'POST',
@@ -103,9 +59,12 @@ export async function replyToTicket(
 }
 
 /** Update the status of a support ticket. */
-export async function updateTicketStatus(id: number, status: string): Promise<SupportTicket> {
+export async function updateTicketStatus(
+  id: number,
+  data: SupportTicketUpdate,
+): Promise<SupportTicket> {
   return apiFetch<SupportTicket>(`/api/v1/support/tickets/${id}/status`, {
     method: 'PUT',
-    body: JSON.stringify({ status }),
+    body: JSON.stringify(data),
   });
 }

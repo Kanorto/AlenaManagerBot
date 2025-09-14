@@ -1,51 +1,10 @@
 import { apiFetch } from './client';
+import type { components, operations } from './types.gen';
 
-/**
- * Representation of a user returned by the API.  This matches the
- * ``UserRead`` schema from the OpenAPI spec.  Additional fields
- * such as ``disabled`` or ``role_id`` may be present but are
- * optional on the frontend.  Whenever the backend adds new
- * properties they will be surfaced here automatically via index
- * signature.
- */
-export interface User {
-  id: number;
-  email?: string | null;
-  full_name?: string | null;
-  disabled?: boolean | null;
-  role_id?: number | null;
-  [key: string]: unknown;
-}
-
-/**
- * Payload for creating a new user.  Administrators should provide
- * ``email`` and ``password``.  ``full_name`` is optional.  Social
- * providers may omit the password but supply ``social_provider`` and
- * ``social_id``.  See ``UserCreate`` schema for details.  For the
- * admin panel we limit creation to email/password based users.
- */
-export interface UserCreate {
-  email: string;
-  password: string;
-  full_name?: string | null;
-  disabled?: boolean;
-  role_id?: number | null;
-}
-
-/**
- * Payload for updating an existing user.  All fields are optional.
- * When a property is undefined it will not be sent to the server
- * (therefore no change).  Setting a property to null will clear it
- * on the backend if supported.  The ``role_id`` field will update
- * the user's role via the RoleService.
- */
-export interface UserUpdate {
-  email?: string | null;
-  password?: string | null;
-  full_name?: string | null;
-  disabled?: boolean | null;
-  role_id?: number | null;
-}
+export type User = components['schemas']['UserRead'];
+export type UserCreate = components['schemas']['UserCreate'];
+export type UserUpdate =
+  operations['update_user_api_v1_users__user_id__put']['requestBody']['content']['application/json'];
 
 /**
  * Fetch a list of users from the backend.  The API currently

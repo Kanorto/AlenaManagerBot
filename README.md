@@ -10,7 +10,8 @@ When the API schema changes:
 1. Replace or edit `openapi.json` in the repository root.
 2. Regenerate frontend types:
    ```bash
-   npm --prefix admin run gen:api
+   cd admin
+   npm run gen:api
    ```
 3. Regenerate bot types:
    ```bash

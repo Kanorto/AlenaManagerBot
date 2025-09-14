@@ -1,62 +1,11 @@
 import { apiFetch } from './client';
+import type { components, operations } from './types.gen';
 
-/**
- * Representation of an event returned by the API.  Dates are
- * represented as ISO strings; UI components can convert them to
- * localized formats when rendering.
- */
-export interface Event {
-  id: number;
-  title: string;
-  description?: string | null;
-  start_time: string;
-  duration_minutes: number;
-  max_participants: number;
-  is_paid: boolean;
-}
-
-export interface EventsQueryParams {
-  limit?: number;
-  offset?: number;
-  sort_by?: string;
-  order?: 'asc' | 'desc';
-  is_paid?: boolean;
-  date_from?: string;
-  date_to?: string;
-}
-
-/**
- * Payload for creating a new event.  Matches the EventCreate schema
- * defined in the OpenAPI spec.  All fields are required except
- * description.
- */
-export interface EventCreate {
-  title: string;
-  description?: string | null;
-  /** ISO 8601 datetime string when the event starts */
-  start_time: string;
-  /** Duration in minutes */
-  duration_minutes: number;
-  /** Maximum number of participants */
-  max_participants: number;
-  /** Whether the event is paid */
-  is_paid: boolean;
-}
-
-/**
- * Payload for updating an existing event.  All fields are optional
- * because the server will merge undefined values with the existing
- * record.  A null value will explicitly clear the field on the
- * server.  Matches the EventUpdate schema from the spec.
- */
-export interface EventUpdate {
-  title?: string | null;
-  description?: string | null;
-  start_time?: string | null;
-  duration_minutes?: number | null;
-  max_participants?: number | null;
-  is_paid?: boolean | null;
-}
+export type Event = components['schemas']['EventRead'];
+export type EventsQueryParams =
+  NonNullable<operations['list_events_api_v1_events__get']['parameters']['query']>;
+export type EventCreate = components['schemas']['EventCreate'];
+export type EventUpdate = components['schemas']['EventUpdate'];
 
 /**
  * Create a new event via POST /api/v1/events/.
@@ -117,13 +66,14 @@ export async function duplicateEvent(
  * not currently include total count, so callers must handle their
  * own pagination logic.
  */
-export async function getEvents(params: EventsQueryParams): Promise<Event[]> {
+export async function getEvents(params: EventsQueryParams = {}): Promise<Event[]> {
   const query = new URLSearchParams();
   if (params.limit !== undefined) query.set('limit', String(params.limit));
   if (params.offset !== undefined) query.set('offset', String(params.offset));
   if (params.sort_by) query.set('sort_by', params.sort_by);
   if (params.order) query.set('order', params.order);
-  if (params.is_paid !== undefined) query.set('is_paid', String(params.is_paid));
+  if (params.is_paid !== undefined && params.is_paid !== null)
+    query.set('is_paid', String(params.is_paid));
   if (params.date_from) query.set('date_from', params.date_from);
   if (params.date_to) query.set('date_to', params.date_to);
   const qs = query.toString();

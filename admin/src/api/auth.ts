@@ -1,14 +1,11 @@
 import { apiFetch } from './client';
+import type { operations } from './types.gen';
 
-export interface LoginRequest {
-  email: string;
-  password: string;
-}
+export type LoginRequest =
+  operations['login_user_api_v1_users_login_post']['requestBody']['content']['application/json'];
 
-export interface LoginResponse {
-  token: string;
-  role_id?: number;
-}
+export type LoginResponse =
+  operations['login_user_api_v1_users_login_post']['responses'][200]['content']['application/json'];
 
 /**
  * Authenticate the user with the backend.  On success, returns a JWT

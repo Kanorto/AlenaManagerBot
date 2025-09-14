@@ -1,27 +1,12 @@
 import { apiFetch } from './client';
+import type { components, operations } from './types.gen';
 
-/**
- * Representation of a booking returned by the API.  Matches the
- * BookingRead schema from the OpenAPI spec.  Some fields may be
- * nullable.
- */
-export interface Booking {
-  id: number;
-  user_id: number;
-  event_id: number;
-  group_size: number;
-  status: string;
-  created_at: string;
-  is_paid?: boolean | null;
-  is_attended?: boolean | null;
-  group_names?: string[] | null;
-}
-
-/** Schema for creating a booking.  Matches BookingCreate. */
-export interface BookingCreate {
-  group_size: number;
-  group_names?: string[] | null;
-}
+export type Booking = components['schemas']['BookingRead'];
+export type BookingCreate = components['schemas']['BookingCreate'];
+export type WaitlistEntry =
+  operations['list_event_waitlist_api_v1_events__event_id__waitlist_get']['responses'][200]['content']['application/json'] extends Array<infer T>
+    ? T
+    : unknown;
 
 /**
  * Fetch bookings for a specific event via GET /api/v1/events/{event_id}/bookings.
@@ -72,18 +57,6 @@ export async function toggleAttendance(
   return apiFetch<Booking>(`/api/v1/bookings/${bookingId}/toggle-attendance`, {
     method: 'POST',
   });
-}
-
-/**
- * Representation of a waitlist entry returned by the API.  The
- * endpoint does not have an explicit schema definition, so we
- * declare it here.
- */
-export interface WaitlistEntry {
-  id: number;
-  user_id: number;
-  position: number;
-  created_at: string;
 }
 
 /**

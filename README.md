@@ -21,3 +21,12 @@ When the API schema changes:
 The admin build and the Telegram bot both read the specification from `/openapi.json`.
 Removing the now redundant `admin/openapi/openapi.json` prevents the specification
 from diverging in the future.
+
+## Telegram bot configuration
+
+The bot supports optional environment variables to manage temporary per-user states:
+
+- `USER_STATE_TTL`: Time-to-live in seconds for entries in the internal user state
+  cache. Entries older than this value are discarded. Default is `300` seconds.
+- `USER_STATE_TIMEOUT_MESSAGE`: If set, this message is sent to users whose state
+  expires due to inactivity.

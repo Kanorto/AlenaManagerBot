@@ -201,7 +201,7 @@ class EventPlannerAPI:
     def _request(
         self, method: str, path: str, *, params: Dict[str, Any] | None = None,
         json_body: Any | None = None
-    ) -> Optional[Any]:
+    ) -> Tuple[Optional[Any], Optional[Dict[str, Any]]]:
         """Perform an HTTP request to the API.
 
         Args:
@@ -210,8 +210,10 @@ class EventPlannerAPI:
             params: Query parameters to include in the request.
             json_body: JSON body to send with the request (for POST/PATCH).
         Returns:
-            The parsed JSON response on success or ``None`` if an error
-            occurs.  Errors are logged.
+            A tuple ``(data, error)``. ``data`` contains the parsed JSON
+            response on success and ``error`` is ``None``. On failure,
+            ``data`` is ``None`` and ``error`` is a dictionary with keys
+            ``status_code`` and ``message`` describing the issue.
         """
         url = f"{self.base_url}{path}"
         headers: Dict[str, str] = {}
@@ -229,94 +231,117 @@ class EventPlannerAPI:
             )
             response.raise_for_status()
             if response.content:
-                return response.json()
-            return None
+                return response.json(), None
+            return None, None
+        except requests.HTTPError as exc:
+            status = exc.response.status_code if exc.response else None
+            message = ""
+            if exc.response is not None:
+                try:
+                    err_json = exc.response.json()
+                    message = err_json.get("detail") or err_json.get("message") or str(err_json)
+                except Exception:
+                    message = exc.response.text
+            if not message:
+                message = str(exc)
+            logger.error("API request failed (%s): %s", status, message)
+            return None, {"status_code": status, "message": message}
         except requests.RequestException as exc:
             logger.error("API request failed: %s", exc)
-            return None
+            return None, {"status_code": None, "message": str(exc)}
 
     # ------------------------------------------------------------------
     # Event operations
     # ------------------------------------------------------------------
-    def list_events(self) -> List[Dict[str, Any]]:
+    def list_events(self) -> Tuple[List[Dict[str, Any]], Optional[Dict[str, Any]]]:
         """Retrieve all available events.
 
         Returns:
-            A list of event objects.  If the request fails an empty list
-            is returned.
+            A tuple ``(events, error)``. ``events`` contains a list of
+            events or is empty on failure.
         """
         ep = self._pick_endpoint("events", method="GET", has_id=False)
         if not ep:
             logger.warning("No endpoint available for listing events")
-            return []
-        data = self._request(ep.method, ep.path)
+            return [], {"status_code": None, "message": "No endpoint for listing events"}
+        data, error = self._request(ep.method, ep.path)
+        if error:
+            return [], error
         if isinstance(data, list):
-            return data
+            return data, None
         # Sometimes the API may return the list inside a dictionary.
         if isinstance(data, dict):
             # Attempt to guess the key containing events
             for key in ["events", "data", "items"]:
                 if key in data and isinstance(data[key], list):
-                    return data[key]
-        return []
+                    return data[key], None
+        return [], None
 
-    def get_event(self, event_id: Any) -> Optional[Dict[str, Any]]:
+    def get_event(self, event_id: Any) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
         """Retrieve a single event by ID.
 
         Args:
             event_id: Identifier of the event.
         Returns:
-            The event object or ``None`` if not found or the request fails.
+            A tuple ``(event, error)``.
         """
         ep = self._pick_endpoint("events", method="GET", has_id=True)
         if not ep:
             logger.warning("No endpoint available for retrieving an event")
-            return None
+            return None, {"status_code": None, "message": "No endpoint for retrieving event"}
         path = ep.path.replace("{id}", str(event_id))
-        return self._request(ep.method, path)
+        data, error = self._request(ep.method, path)
+        if error:
+            return None, error
+        return data, None
 
-    def register_for_event(self, event_id: Any, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def register_for_event(self, event_id: Any, payload: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
         """Register for an event.
 
         Args:
             event_id: Identifier of the event to register for.
             payload: Data to send in the request body (e.g. user details).
         Returns:
-            Registration result or ``None`` if the request fails.
+            A tuple ``(result, error)``.
         """
         ep = self._pick_endpoint("events", method="POST", has_id=True)
         if not ep:
             logger.warning("No endpoint available for event registration")
-            return None
+            return None, {"status_code": None, "message": "No endpoint for event registration"}
         path = ep.path.replace("{id}", str(event_id))
-        return self._request(ep.method, path, json_body=payload)
+        data, error = self._request(ep.method, path, json_body=payload)
+        if error:
+            return None, error
+        return data, None
 
     # ------------------------------------------------------------------
     # Registration operations
     # ------------------------------------------------------------------
-    def cancel_registration(self, registration_id: Any) -> bool:
+    def cancel_registration(self, registration_id: Any) -> Tuple[bool, Optional[Dict[str, Any]]]:
         """Cancel (delete) a registration.
 
         Args:
             registration_id: Identifier of the registration to cancel.
         Returns:
-            ``True`` if the cancellation was successful, otherwise ``False``.
+            A tuple ``(success, error)``.
         """
         ep = self._pick_endpoint("registrations", method="DELETE", has_id=True)
         if not ep:
             logger.warning("No endpoint available for cancelling registrations")
-            return False
+            return False, {"status_code": None, "message": "No endpoint for cancelling registrations"}
         path = ep.path.replace("{id}", str(registration_id))
-        resp = self._request(ep.method, path)
-        return resp is not None
+        resp, error = self._request(ep.method, path)
+        if error:
+            return False, error
+        return resp is not None, None
 
-    def register_user(self, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def register_user(self, payload: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
         """Create a new user registration.
 
         Args:
             payload: User data to send in the request body (e.g. name, email).
         Returns:
-            User object on success or ``None`` on failure.
+            A tuple ``(user, error)``.
         """
         # Some APIs may expose user registration via a dedicated path
         # separate from event registrations.  Attempt to discover such
@@ -325,12 +350,15 @@ class EventPlannerAPI:
         # Fallback to a conventional /registrations path.
         if not ep:
             ep = ApiEndpoint(path="/registrations", method="POST")
-        return self._request(ep.method, ep.path, json_body=payload)
+        data, error = self._request(ep.method, ep.path, json_body=payload)
+        if error:
+            return None, error
+        return data, None
 
     # ------------------------------------------------------------------
     # Extended registration operations
     # ------------------------------------------------------------------
-    def register_multiple(self, event_id: Any, participants: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    def register_multiple(self, event_id: Any, participants: List[Dict[str, Any]]) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
         """Register multiple participants for an event.
 
         Args:
@@ -339,7 +367,7 @@ class EventPlannerAPI:
                 exact schema is determined by the API (e.g. each
                 dictionary may contain names, emails or telegram ids).
         Returns:
-            Registration result or ``None`` if the request fails.
+            A tuple ``(result, error)``.
         """
         # Discover a multi‑registration endpoint if defined
         ep = self._pick_endpoint("multiregistration", method="POST", has_id=True)
@@ -348,47 +376,55 @@ class EventPlannerAPI:
             ep = self._pick_endpoint("events", method="POST", has_id=True)
         if not ep:
             logger.warning("No endpoint available for multi registration")
-            return None
+            return None, {"status_code": None, "message": "No endpoint for multi registration"}
         path = ep.path.replace("{id}", str(event_id))
         payload = {"participants": participants}
-        return self._request(ep.method, path, json_body=payload)
+        data, error = self._request(ep.method, path, json_body=payload)
+        if error:
+            return None, error
+        return data, None
 
-    def join_waitlist(self, event_id: Any, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def join_waitlist(self, event_id: Any, payload: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
         """Join the waiting list for an event.
 
         Args:
             event_id: Identifier of the event.
             payload: Additional data such as the user's identifier.
         Returns:
-            API response or ``None`` on failure.
+            A tuple ``(result, error)``.
         """
         ep = self._pick_endpoint("waitlist", method="POST", has_id=True)
         if not ep:
             # fallback path
             ep = ApiEndpoint(path="/events/{id}/waiting-list", method="POST")
         path = ep.path.replace("{id}", str(event_id))
-        return self._request(ep.method, path, json_body=payload)
+        data, error = self._request(ep.method, path, json_body=payload)
+        if error:
+            return None, error
+        return data, None
 
-    def initiate_payment(self, registration_id: Any, payload: Dict[str, Any] | None = None) -> Optional[Dict[str, Any]]:
+    def initiate_payment(self, registration_id: Any, payload: Dict[str, Any] | None = None) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
         """Initiate a payment for a registration.
 
         Args:
             registration_id: Identifier of the registration.
             payload: Optional additional data (e.g. payment method).
         Returns:
-            API response or ``None`` on failure.  The response may include
-            a payment URL or instructions.
+            A tuple ``(result, error)`` where ``result`` may include a payment URL or instructions.
         """
         ep = self._pick_endpoint("payment", method="POST", has_id=True)
         if not ep:
             ep = ApiEndpoint(path="/registrations/{id}/pay", method="POST")
         path = ep.path.replace("{id}", str(registration_id))
-        return self._request(ep.method, path, json_body=payload or {})
+        data, error = self._request(ep.method, path, json_body=payload or {})
+        if error:
+            return None, error
+        return data, None
 
     # ------------------------------------------------------------------
     # FAQ / Information operations
     # ------------------------------------------------------------------
-    def get_faq(self) -> List[Dict[str, Any]]:
+    def get_faq(self) -> Tuple[List[Dict[str, Any]], Optional[Dict[str, Any]]]:
         """Retrieve frequently asked questions from the server.
 
         The client attempts to discover an endpoint tagged as ``info`` or
@@ -396,142 +432,170 @@ class EventPlannerAPI:
         falls back to conventional paths such as ``/faq`` or ``/info``.
 
         Returns:
-            A list of FAQ entries, each represented as a dictionary.
+            A tuple ``(faq_list, error)``.
         """
+        last_error: Optional[Dict[str, Any]] = None
         # Discover endpoints with tags matching 'faq' or 'info'.
         for tag_key in ("faq", "info"):
             category = self._KNOWN_TAGS.get(tag_key)
             if category and self.endpoints.get(category):
                 for ep in self.endpoints[category]:
                     if ep.method == "GET" and "{" not in ep.path:
-                        data = self._request(ep.method, ep.path)
+                        data, error = self._request(ep.method, ep.path)
+                        if error:
+                            last_error = error
+                            continue
                         if isinstance(data, list):
-                            return data
+                            return data, None
                         if isinstance(data, dict):
                             # Attempt to extract list from known keys
                             for key in ["faq", "faqs", "items", "data"]:
                                 if key in data and isinstance(data[key], list):
-                                    return data[key]
+                                    return data[key], None
         # Fall back to default paths
         for path in ("/faq", "/faqs", "/info"):
-            data = self._request("GET", path)
+            data, error = self._request("GET", path)
+            if error:
+                last_error = error
+                continue
             if isinstance(data, list):
-                return data
+                return data, None
             if isinstance(data, dict):
                 for key in ["faq", "faqs", "items", "data"]:
                     if key in data and isinstance(data[key], list):
-                        return data[key]
-        return []
+                        return data[key], None
+        return [], last_error
 
     # ------------------------------------------------------------------
     # User registration/booking retrieval
     # ------------------------------------------------------------------
-    def get_user_registrations(self, telegram_id: Any) -> List[Dict[str, Any]]:
+    def get_user_registrations(self, telegram_id: Any) -> Tuple[List[Dict[str, Any]], Optional[Dict[str, Any]]]:
         """Retrieve all registrations for a given user.
 
         Args:
             telegram_id: The user's Telegram identifier used as a key in the API.
         Returns:
-            A list of registration objects.  An empty list is returned on failure.
+            A tuple ``(registrations, error)``.
         """
+        last_error: Optional[Dict[str, Any]] = None
         # Attempt to discover a path tagged as 'registrations' that includes a user id
         for ep in self.endpoints.get("registrations", []):
             if ep.method == "GET" and "{id}" in ep.path:
                 path = ep.path.replace("{id}", str(telegram_id))
-                data = self._request(ep.method, path)
+                data, error = self._request(ep.method, path)
+                if error:
+                    last_error = error
+                    continue
                 if isinstance(data, list):
-                    return data
+                    return data, None
                 if isinstance(data, dict):
                     for key in ["registrations", "data", "items"]:
                         if key in data and isinstance(data[key], list):
-                            return data[key]
+                            return data[key], None
         # Fallback to /users/{id}/registrations
         path = f"/users/{telegram_id}/registrations"
-        data = self._request("GET", path)
+        data, error = self._request("GET", path)
+        if error:
+            last_error = error
         if isinstance(data, list):
-            return data
+            return data, None
         if isinstance(data, dict):
             for key in ["registrations", "data", "items"]:
                 if key in data and isinstance(data[key], list):
-                    return data[key]
-        return []
+                    return data[key], None
+        return [], last_error
 
     # ------------------------------------------------------------------
     # Support and feedback operations
     # ------------------------------------------------------------------
-    def create_support_message(self, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def create_support_message(self, payload: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
         """Send a support request to the server.
 
         Args:
             payload: A dictionary containing support request details such as
                 user identifier and message text.
         Returns:
-            The API response or ``None`` if the request fails.
+            A tuple ``(result, error)``.
         """
         # Look for a path tagged 'support' or 'tickets'
+        last_error: Optional[Dict[str, Any]] = None
         for tag in ("support", "ticket", "tickets"):
             category = self._KNOWN_TAGS.get(tag)
             if category and self.endpoints.get(category):
                 for ep in self.endpoints[category]:
                     if ep.method == "POST" and "{" not in ep.path:
-                        return self._request(ep.method, ep.path, json_body=payload)
+                        data, error = self._request(ep.method, ep.path, json_body=payload)
+                        if error:
+                            last_error = error
+                            continue
+                        return data, None
         # Fallback to /support
-        return self._request("POST", "/support", json_body=payload)
+        data, error = self._request("POST", "/support", json_body=payload)
+        if error:
+            return None, error if error else last_error
+        return data, None
 
-    def create_feedback(self, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def create_feedback(self, payload: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
         """Send user feedback to the server.
 
         Args:
             payload: A dictionary containing user feedback details (e.g. rating, text).
         Returns:
-            The API response or ``None`` if the request fails.
+            A tuple ``(result, error)``.
         """
         # Look for a path tagged 'feedback'
         category = self._KNOWN_TAGS.get("feedback")
         if category and self.endpoints.get(category):
             for ep in self.endpoints[category]:
                 if ep.method == "POST" and "{" not in ep.path:
-                    return self._request(ep.method, ep.path, json_body=payload)
+                    data, error = self._request(ep.method, ep.path, json_body=payload)
+                    if error:
+                        return None, error
+                    return data, None
         # Fallback to /feedback
         return self._request("POST", "/feedback", json_body=payload)
 
     # ------------------------------------------------------------------
     # Messaging operations
     # ------------------------------------------------------------------
-    def get_messages(self) -> Dict[str, Any]:
+    def get_messages(self) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
         """Retrieve all message templates from the server.
 
         Returns:
-            A dictionary mapping message identifiers to message contents.
-            Returns an empty dictionary on failure or if no messages
-            endpoint is defined.
+            A tuple ``(messages, error)`` where ``messages`` is a dictionary
+            mapping identifiers to message contents.
         """
         ep = self._pick_endpoint("messages", method="GET", has_id=False)
         if not ep:
             logger.warning("No endpoint available for messages")
-            return {}
-        data = self._request(ep.method, ep.path)
+            return {}, {"status_code": None, "message": "No endpoint for messages"}
+        data, error = self._request(ep.method, ep.path)
+        if error:
+            return {}, error
         if isinstance(data, dict):
-            return data
-        return {}
+            return data, None
+        return {}, None
 
     # ------------------------------------------------------------------
     # Mailing operations
     # ------------------------------------------------------------------
-    def create_mailing(self, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def create_mailing(self, payload: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
         """Send a broadcast/mailing.
 
         Args:
             payload: The mailing content, including subject, body and
                 possibly audience selection.
         Returns:
-            The API response on success or ``None`` on error.
+            A tuple ``(result, error)``.
         """
         ep = self._pick_endpoint("mailings", method="POST", has_id=False)
         if not ep:
             logger.warning("No endpoint available for mailings")
-            return None
-        return self._request(ep.method, ep.path, json_body=payload)
+            return None, {"status_code": None, "message": "No endpoint for mailings"}
+        data, error = self._request(ep.method, ep.path, json_body=payload)
+        if error:
+            return None, error
+        return data, None
 
     # ------------------------------------------------------------------
     # Helpers

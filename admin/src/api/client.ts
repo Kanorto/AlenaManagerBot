@@ -11,7 +11,7 @@ import { useNotifications } from '../store/notifications';
 export async function apiFetch<T>(
   input: string,
   init: RequestInit = {},
-): Promise<T> {
+): Promise<T | null> {
   const { token } = useAuth.getState();
   const { addNotification } = useNotifications.getState();
   const baseUrl = import.meta.env.VITE_API_BASE_URL || '';
@@ -45,10 +45,14 @@ export async function apiFetch<T>(
     throw new Error('Unauthorized');
   }
   if (!response.ok) {
-    const errorText = await response.text();
-    // Surface non‑OK responses as notifications.  Provide a generic
-    // message when the body is empty.
-    const message = errorText || response.statusText;
+    let message: string;
+    try {
+      const data = await response.json();
+      message = (data as { detail?: string })?.detail || response.statusText;
+    } catch {
+      // When the response body is not valid JSON, fall back to the status text
+      message = response.statusText;
+    }
     try {
       console.error('apiFetch error', response.status, message);
     } catch {
@@ -57,10 +61,13 @@ export async function apiFetch<T>(
     addNotification(message, 'error');
     throw new Error(message);
   }
-  // Attempt to parse JSON; fallback to undefined for empty responses.
+  if (response.status === 204) {
+    return null;
+  }
+  // Attempt to parse JSON; return null for empty responses.
   try {
     return (await response.json()) as T;
   } catch {
-    return undefined as unknown as T;
+    return null;
   }
 }

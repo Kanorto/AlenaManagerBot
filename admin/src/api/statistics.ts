@@ -26,5 +26,6 @@ export interface StatisticsOverview {
  * propagation.  Returns a record of counts keyed by metric name.
  */
 export async function getStatisticsOverview(): Promise<StatisticsOverview> {
-  return apiFetch<StatisticsOverview>('/api/v1/statistics/overview');
+  const res = await apiFetch<StatisticsOverview>('/api/v1/statistics/overview');
+  return res!;
 }

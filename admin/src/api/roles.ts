@@ -41,7 +41,8 @@ export interface RoleUpdate {
  * support pagination.
  */
 export async function getRoles(): Promise<Role[]> {
-  return apiFetch<Role[]>('/api/v1/roles/');
+  const res = await apiFetch<Role[]>('/api/v1/roles/');
+  return res ?? [];
 }
 
 /**
@@ -49,10 +50,11 @@ export async function getRoles(): Promise<Role[]> {
  * role.  Only super administrators may create roles.
  */
 export async function createRole(data: RoleCreate): Promise<Role> {
-  return apiFetch<Role>('/api/v1/roles/', {
+  const res = await apiFetch<Role>('/api/v1/roles/', {
     method: 'POST',
     body: JSON.stringify(data),
   });
+  return res!;
 }
 
 /**
@@ -60,10 +62,11 @@ export async function createRole(data: RoleCreate): Promise<Role> {
  * updated role.  Only super administrators may modify roles.
  */
 export async function updateRole(id: number, data: RoleUpdate): Promise<Role> {
-  return apiFetch<Role>(`/api/v1/roles/${id}`, {
+  const res = await apiFetch<Role>(`/api/v1/roles/${id}`, {
     method: 'PUT',
     body: JSON.stringify(data),
   });
+  return res!;
 }
 
 /**

@@ -56,7 +56,8 @@ export async function getPayments(params: PaymentsQueryParams): Promise<Payment[
   if (params.offset !== undefined) query.set('offset', String(params.offset));
   const qs = query.toString();
   const url = qs ? `/api/v1/payments/?${qs}` : '/api/v1/payments/';
-  return apiFetch<Payment[]>(url);
+  const res = await apiFetch<Payment[]>(url);
+  return res ?? [];
 }
 
 /**

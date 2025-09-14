@@ -1,4 +1,5 @@
 import { apiFetch } from './client';
+import type { operations } from './types.gen';
 
 /**
  * The messages API manages bot message templates keyed by a string.
@@ -7,7 +8,8 @@ import { apiFetch } from './client';
  * contains ``content`` (string) and optional ``buttons`` (array).
  */
 
-export type BotMessage = Record<string, unknown>;
+export type BotMessage =
+  operations['get_message_api_v1_messages__key__get']['responses'][200]['content']['application/json'];
 
 /** List all bot message templates.  Returns an array of objects. */
 export async function getMessages(): Promise<BotMessage[]> {

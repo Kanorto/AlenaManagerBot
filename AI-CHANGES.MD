@@ -5,3 +5,4 @@
 - Generated frontend types from root specification.
 - Generated bot types (`bot_types.gen.py`) from root specification.
 - Documented specification update process in `README.md`.
+- Replaced custom admin API interfaces with generated types and updated regeneration docs.

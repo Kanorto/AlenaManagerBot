@@ -1,27 +1,9 @@
 import { apiFetch } from './client';
+import type { components, operations } from './types.gen';
 
-/** Represents a user review for an event. */
-export interface Review {
-  id: number;
-  user_id: number;
-  event_id: number;
-  rating: number;
-  comment: string | null;
-  approved: boolean;
-  moderated_by: number | null;
-  created_at: string;
-}
-
-/** Query parameters for listing reviews. */
-export interface ReviewsQueryParams {
-  event_id?: number | null;
-  user_id?: number | null;
-  approved?: boolean | null;
-  limit?: number;
-  offset?: number;
-  sort_by?: string | null;
-  order?: string | null;
-}
+export type Review = components['schemas']['ReviewRead'];
+export type ReviewsQueryParams =
+  operations['list_reviews_api_v1_reviews_get']['parameters']['query'];
 
 /** Fetch a paginated list of reviews with optional filters. */
 export async function getReviews(params: ReviewsQueryParams = {}): Promise<Review[]> {

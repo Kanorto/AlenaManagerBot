@@ -49,23 +49,26 @@ export async function getFaqs(params: FaqQueryParams = {}): Promise<Faq[]> {
   if (params.order) search.set('order', params.order);
   const query = search.toString();
   const url = `/api/v1/faqs/${query ? `?${query}` : ''}`;
-  return apiFetch<Faq[]>(url);
+  const res = await apiFetch<Faq[]>(url);
+  return res ?? [];
 }
 
 /** Create a new FAQ entry. */
 export async function createFaq(data: FaqCreate): Promise<Faq> {
-  return apiFetch<Faq>('/api/v1/faqs/', {
+  const res = await apiFetch<Faq>('/api/v1/faqs/', {
     method: 'POST',
     body: JSON.stringify(data),
   });
+  return res!;
 }
 
 /** Update an existing FAQ entry by its ID. */
 export async function updateFaq(id: number, data: FaqUpdate): Promise<Faq> {
-  return apiFetch<Faq>(`/api/v1/faqs/${id}`, {
+  const res = await apiFetch<Faq>(`/api/v1/faqs/${id}`, {
     method: 'PUT',
     body: JSON.stringify(data),
   });
+  return res!;
 }
 
 /** Delete an FAQ entry. */

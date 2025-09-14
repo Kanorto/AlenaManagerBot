@@ -54,7 +54,8 @@ export interface UserUpdate {
  * parameters for limit/offset and forward them accordingly.
  */
 export async function getUsers(): Promise<User[]> {
-  return apiFetch<User[]>('/api/v1/users/');
+  const res = await apiFetch<User[]>('/api/v1/users/');
+  return res ?? [];
 }
 
 /**
@@ -64,10 +65,11 @@ export async function getUsers(): Promise<User[]> {
  * will surface through the apiFetch helper.
  */
 export async function createUser(data: UserCreate): Promise<User> {
-  return apiFetch<User>('/api/v1/users/', {
+  const res = await apiFetch<User>('/api/v1/users/', {
     method: 'POST',
     body: JSON.stringify(data),
   });
+  return res!;
 }
 
 /**
@@ -76,10 +78,11 @@ export async function createUser(data: UserCreate): Promise<User> {
  * will be updated; undefined values are omitted entirely.
  */
 export async function updateUser(id: number, data: UserUpdate): Promise<User> {
-  return apiFetch<User>(`/api/v1/users/${id}`, {
+  const res = await apiFetch<User>(`/api/v1/users/${id}`, {
     method: 'PUT',
     body: JSON.stringify(data),
   });
+  return res!;
 }
 
 /**

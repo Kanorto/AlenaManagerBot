@@ -27,7 +27,8 @@ export interface BookingCreate {
  * Fetch bookings for a specific event via GET /api/v1/events/{event_id}/bookings.
  */
 export async function getEventBookings(eventId: number): Promise<Booking[]> {
-  return apiFetch<Booking[]>(`/api/v1/events/${eventId}/bookings`);
+  const res = await apiFetch<Booking[]>(`/api/v1/events/${eventId}/bookings`);
+  return res ?? [];
 }
 
 /**
@@ -37,10 +38,11 @@ export async function createBooking(
   eventId: number,
   data: BookingCreate,
 ): Promise<Booking> {
-  return apiFetch<Booking>(`/api/v1/events/${eventId}/bookings`, {
+  const res = await apiFetch<Booking>(`/api/v1/events/${eventId}/bookings`, {
     method: 'POST',
     body: JSON.stringify(data),
   });
+  return res!;
 }
 
 /**
@@ -57,9 +59,10 @@ export async function deleteBooking(bookingId: number): Promise<void> {
  * Returns the updated booking.
  */
 export async function togglePayment(bookingId: number): Promise<Booking> {
-  return apiFetch<Booking>(`/api/v1/bookings/${bookingId}/toggle-payment`, {
+  const res = await apiFetch<Booking>(`/api/v1/bookings/${bookingId}/toggle-payment`, {
     method: 'POST',
   });
+  return res!;
 }
 
 /**
@@ -69,9 +72,10 @@ export async function togglePayment(bookingId: number): Promise<Booking> {
 export async function toggleAttendance(
   bookingId: number,
 ): Promise<Booking> {
-  return apiFetch<Booking>(`/api/v1/bookings/${bookingId}/toggle-attendance`, {
+  const res = await apiFetch<Booking>(`/api/v1/bookings/${bookingId}/toggle-attendance`, {
     method: 'POST',
   });
+  return res!;
 }
 
 /**
@@ -92,5 +96,6 @@ export interface WaitlistEntry {
 export async function getEventWaitlist(
   eventId: number,
 ): Promise<WaitlistEntry[]> {
-  return apiFetch<WaitlistEntry[]>(`/api/v1/events/${eventId}/waitlist`);
+  const res = await apiFetch<WaitlistEntry[]>(`/api/v1/events/${eventId}/waitlist`);
+  return res ?? [];
 }

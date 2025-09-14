@@ -35,7 +35,8 @@ export async function getReviews(params: ReviewsQueryParams = {}): Promise<Revie
   if (params.order) search.set('order', params.order);
   const query = search.toString();
   const url = `/api/v1/reviews${query ? `?${query}` : ''}`;
-  return apiFetch<Review[]>(url);
+  const res = await apiFetch<Review[]>(url);
+  return res ?? [];
 }
 
 /** Delete a review by its ID. */
@@ -47,8 +48,9 @@ export async function deleteReview(id: number): Promise<void> {
 
 /** Approve or reject a review.  Returns the updated review. */
 export async function moderateReview(id: number, approved: boolean): Promise<Review> {
-  return apiFetch<Review>(`/api/v1/reviews/${id}/moderate`, {
+  const res = await apiFetch<Review>(`/api/v1/reviews/${id}/moderate`, {
     method: 'PUT',
     body: JSON.stringify({ approved }),
   });
+  return res!;
 }

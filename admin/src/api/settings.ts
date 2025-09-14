@@ -13,19 +13,22 @@ export interface Setting {
 
 /** Fetch all settings.  Only super administrators can access this endpoint. */
 export async function getSettings(): Promise<Setting[]> {
-  return apiFetch<Setting[]>('/api/v1/settings/');
+  const res = await apiFetch<Setting[]>('/api/v1/settings/');
+  return res ?? [];
 }
 
 /** Retrieve a specific setting by key. */
 export async function getSetting(key: string): Promise<Setting> {
-  return apiFetch<Setting>(`/api/v1/settings/${encodeURIComponent(key)}`);
+  const res = await apiFetch<Setting>(`/api/v1/settings/${encodeURIComponent(key)}`);
+  return res!;
 }
 
 /** Upsert (create or update) a setting.  Provide the new value and its
  * type.  Supported types include 'string', 'int', 'float' and 'bool'. */
 export async function upsertSetting(key: string, value: unknown, type: string): Promise<Setting> {
-  return apiFetch<Setting>(`/api/v1/settings/${encodeURIComponent(key)}`, {
+  const res = await apiFetch<Setting>(`/api/v1/settings/${encodeURIComponent(key)}`, {
     method: 'POST',
     body: JSON.stringify({ value, type }),
   });
+  return res!;
 }

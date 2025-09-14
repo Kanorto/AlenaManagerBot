@@ -63,10 +63,11 @@ export interface EventUpdate {
  * Returns the created Event on success.
  */
 export async function createEvent(data: EventCreate): Promise<Event> {
-  return apiFetch<Event>('/api/v1/events/', {
+  const res = await apiFetch<Event>('/api/v1/events/', {
     method: 'POST',
     body: JSON.stringify(data),
   });
+  return res!;
 }
 
 /**
@@ -77,10 +78,11 @@ export async function updateEvent(
   id: number,
   data: EventUpdate,
 ): Promise<Event> {
-  return apiFetch<Event>(`/api/v1/events/${id}`, {
+  const res = await apiFetch<Event>(`/api/v1/events/${id}`, {
     method: 'PUT',
     body: JSON.stringify(data),
   });
+  return res!;
 }
 
 /**
@@ -105,10 +107,11 @@ export async function duplicateEvent(
   id: number,
   start_time: string,
 ): Promise<Event> {
-  return apiFetch<Event>(`/api/v1/events/${id}/duplicate`, {
+  const res = await apiFetch<Event>(`/api/v1/events/${id}/duplicate`, {
     method: 'POST',
     body: JSON.stringify({ start_time }),
   });
+  return res!;
 }
 
 /**
@@ -128,5 +131,6 @@ export async function getEvents(params: EventsQueryParams): Promise<Event[]> {
   if (params.date_to) query.set('date_to', params.date_to);
   const qs = query.toString();
   const url = qs ? `/api/v1/events/?${qs}` : '/api/v1/events/';
-  return apiFetch<Event[]>(url);
+  const res = await apiFetch<Event[]>(url);
+  return res ?? [];
 }

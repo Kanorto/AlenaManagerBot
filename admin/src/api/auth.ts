@@ -16,8 +16,9 @@ export interface LoginResponse {
  * the call will throw an error with the response message.
  */
 export async function login(req: LoginRequest): Promise<LoginResponse> {
-  return apiFetch<LoginResponse>('/api/v1/users/login', {
+  const res = await apiFetch<LoginResponse>('/api/v1/users/login', {
     method: 'POST',
     body: JSON.stringify(req),
   });
+  return res!;
 }

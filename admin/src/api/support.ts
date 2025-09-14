@@ -68,15 +68,17 @@ export async function getTickets(params: TicketsQueryParams = {}): Promise<Suppo
   if (params.order) search.set('order', params.order);
   const query = search.toString();
   const url = `/api/v1/support/tickets${query ? `?${query}` : ''}`;
-  return apiFetch<SupportTicket[]>(url);
+  const res = await apiFetch<SupportTicket[]>(url);
+  return res ?? [];
 }
 
 /** Create a new support ticket. */
 export async function createTicket(data: SupportTicketCreate): Promise<SupportTicket> {
-  return apiFetch<SupportTicket>('/api/v1/support/tickets', {
+  const res = await apiFetch<SupportTicket>('/api/v1/support/tickets', {
     method: 'POST',
     body: JSON.stringify(data),
   });
+  return res!;
 }
 
 /** Delete a support ticket.  Only administrators can delete tickets. */
@@ -88,7 +90,8 @@ export async function deleteTicket(id: number): Promise<void> {
 
 /** Retrieve a ticket along with its message thread. */
 export async function getTicketWithMessages(id: number): Promise<TicketWithMessages> {
-  return apiFetch<TicketWithMessages>(`/api/v1/support/tickets/${id}`);
+  const res = await apiFetch<TicketWithMessages>(`/api/v1/support/tickets/${id}`);
+  return res!;
 }
 
 /** Reply to a support ticket.  Returns the created message. */
@@ -96,16 +99,18 @@ export async function replyToTicket(
   id: number,
   data: { content: string; attachments?: string[] | null },
 ): Promise<SupportMessage> {
-  return apiFetch<SupportMessage>(`/api/v1/support/tickets/${id}/reply`, {
+  const res = await apiFetch<SupportMessage>(`/api/v1/support/tickets/${id}/reply`, {
     method: 'POST',
     body: JSON.stringify(data),
   });
+  return res!;
 }
 
 /** Update the status of a support ticket. */
 export async function updateTicketStatus(id: number, status: string): Promise<SupportTicket> {
-  return apiFetch<SupportTicket>(`/api/v1/support/tickets/${id}/status`, {
+  const res = await apiFetch<SupportTicket>(`/api/v1/support/tickets/${id}/status`, {
     method: 'PUT',
     body: JSON.stringify({ status }),
   });
+  return res!;
 }

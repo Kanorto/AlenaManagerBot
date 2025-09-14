@@ -33,5 +33,6 @@ export async function getAuditLogs(params: AuditQueryParams = {}): Promise<Audit
   if (params.offset !== undefined) search.set('offset', String(params.offset));
   const query = search.toString();
   const url = `/api/v1/audit/logs${query ? `?${query}` : ''}`;
-  return apiFetch<AuditLog[]>(url);
+  const res = await apiFetch<AuditLog[]>(url);
+  return res ?? [];
 }

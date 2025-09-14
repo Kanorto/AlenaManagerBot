@@ -69,28 +69,32 @@ export async function getMailings(params: MailingsQueryParams = {}): Promise<Mai
   if (params.order) search.set('order', params.order);
   const query = search.toString();
   const url = `/api/v1/mailings/${query ? `?${query}` : ''}`;
-  return apiFetch<Mailing[]>(url);
+  const res = await apiFetch<Mailing[]>(url);
+  return res ?? [];
 }
 
 /** Fetch details of a single mailing by ID. */
 export async function getMailing(id: number): Promise<Mailing> {
-  return apiFetch<Mailing>(`/api/v1/mailings/${id}`);
+  const res = await apiFetch<Mailing>(`/api/v1/mailings/${id}`);
+  return res!;
 }
 
 /** Create a new mailing.  Returns the created mailing. */
 export async function createMailing(data: MailingCreate): Promise<Mailing> {
-  return apiFetch<Mailing>('/api/v1/mailings/', {
+  const res = await apiFetch<Mailing>('/api/v1/mailings/', {
     method: 'POST',
     body: JSON.stringify(data),
   });
+  return res!;
 }
 
 /** Update an existing mailing.  Returns the updated mailing. */
 export async function updateMailing(id: number, data: MailingUpdate): Promise<Mailing> {
-  return apiFetch<Mailing>(`/api/v1/mailings/${id}`, {
+  const res = await apiFetch<Mailing>(`/api/v1/mailings/${id}`, {
     method: 'PUT',
     body: JSON.stringify(data),
   });
+  return res!;
 }
 
 /** Delete a mailing by its ID.  Returns void on success. */
@@ -102,9 +106,10 @@ export async function deleteMailing(id: number): Promise<void> {
 
 /** Trigger immediate sending of a mailing.  Returns the number of recipients. */
 export async function sendMailing(id: number): Promise<number> {
-  return apiFetch<number>(`/api/v1/mailings/${id}/send`, {
+  const res = await apiFetch<number>(`/api/v1/mailings/${id}/send`, {
     method: 'POST',
   });
+  return res ?? 0;
 }
 
 /** Retrieve delivery logs for a mailing.  Results may be paginated. */
@@ -117,5 +122,6 @@ export async function getMailingLogs(
   if (params.offset !== undefined) search.set('offset', String(params.offset));
   const query = search.toString();
   const url = `/api/v1/mailings/${id}/logs${query ? `?${query}` : ''}`;
-  return apiFetch<MailingLog[]>(url);
+  const res = await apiFetch<MailingLog[]>(url);
+  return res ?? [];
 }

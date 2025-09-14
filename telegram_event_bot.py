@@ -83,6 +83,9 @@ class TelegramEventBot:
                 logger.warning(
                     "ADMIN_CHAT_ID environment variable should be a numeric Telegram chat identifier."
                 )
+        # Configuration for user state timeouts
+        self.user_state_ttl = int(os.getenv("USER_STATE_TTL", "300"))
+        self.user_state_timeout_message = os.getenv("USER_STATE_TIMEOUT_MESSAGE")
         openapi_path = "/openapi.json"
         self.api = EventPlannerAPI(
             base_url=self.base_url,
@@ -106,7 +109,9 @@ class TelegramEventBot:
         # a simple state such as 'awaiting_support' or 'awaiting_feedback'.
         # If the value is a dict, keys may include 'state', 'event_id',
         # 'count' and 'names' for collecting additional participant names.
-        self.user_states: Dict[int, Any] = {}
+        # Each entry stores a dict with keys 'value' (the original state)
+        # and 'timestamp' (seconds since the epoch when the state was set).
+        self.user_states: Dict[int, Dict[str, Any]] = {}
         # Initialise menu_labels as None; it will be built lazily in
         # ``_send_main_menu`` using the current message cache.  This
         # avoids loading messages prematurely during initialisation.
@@ -220,6 +225,38 @@ class TelegramEventBot:
         if not self.message_cache:
             self._load_messages()
         return str(self.message_cache.get(key, default or key))
+
+    # ------------------------------------------------------------------
+    # User state management
+    # ------------------------------------------------------------------
+    def _set_user_state(self, user_id: int, value: Any) -> None:
+        """Store state information for a user with the current timestamp."""
+        self.user_states[user_id] = {"value": value, "timestamp": time.time()}
+
+    def _get_user_state(self, user_id: int) -> Any:
+        """Retrieve the stored state value for a user."""
+        data = self.user_states.get(user_id)
+        if data is None:
+            return None
+        return data.get("value")
+
+    def _clear_user_state(self, user_id: int) -> None:
+        """Remove any stored state for a user."""
+        self.user_states.pop(user_id, None)
+
+    def _cleanup_user_states(self) -> None:
+        """Remove user states that have exceeded the configured TTL."""
+        if self.user_state_ttl <= 0:
+            return
+        now = time.time()
+        expired_ids = [
+            uid for uid, data in self.user_states.items()
+            if now - data.get("timestamp", 0) > self.user_state_ttl
+        ]
+        for uid in expired_ids:
+            if self.user_state_timeout_message:
+                self._send_message(uid, self.user_state_timeout_message)
+            self.user_states.pop(uid, None)
 
     # ------------------------------------------------------------------
     # Command handlers
@@ -442,7 +479,7 @@ class TelegramEventBot:
             if data.startswith("register:") and user_id and chat_id_cb:
                 event_id = data.split(":", 1)[1]
                 # Save state to identify event for subsequent count selection
-                self.user_states[user_id] = f"select_count:{event_id}"
+                self._set_user_state(user_id, f"select_count:{event_id}")
                 # Present number of participants options (1–5)
                 self._prompt_participant_count(chat_id_cb, event_id)
                 self._answer_callback_query(callback_id)
@@ -463,12 +500,15 @@ class TelegramEventBot:
                     else:
                         # Set up state for collecting names of additional participants
                         # We store event_id, total count and an empty list of names
-                        self.user_states[user_id] = {
-                            "state": "collecting_names",
-                            "event_id": event_id,
-                            "count": count,
-                            "names": [],
-                        }
+                        self._set_user_state(
+                            user_id,
+                            {
+                                "state": "collecting_names",
+                                "event_id": event_id,
+                                "count": count,
+                                "names": [],
+                            },
+                        )
                         # Prompt for the first additional participant's name
                         self._prompt_next_participant_name(chat_id_cb, user_id)
                 self._answer_callback_query(callback_id)
@@ -539,7 +579,7 @@ class TelegramEventBot:
             # engaged in a multi‑step interaction (support or feedback),
             # process accordingly.
             user_id = from_user.get("id")
-            state = self.user_states.get(user_id)
+            state = self._get_user_state(user_id)
             # Handle support and feedback states stored as simple strings
             if state == "awaiting_support":
                 self._process_support(chat_id, from_user, text)
@@ -560,7 +600,7 @@ class TelegramEventBot:
                 count = state.get("count", 0)
                 if len(names) < max(count - 1, 0):
                     # Prompt for next name
-                    self.user_states[user_id] = state
+                    self._set_user_state(user_id, state)
                     self._prompt_next_participant_name(chat_id, user_id)
                 else:
                     # We have all names; finalise registration
@@ -747,7 +787,7 @@ class TelegramEventBot:
 
     def _prompt_support(self, chat_id: int, user_id: int) -> None:
         """Prompt the user to enter their support message."""
-        self.user_states[user_id] = "awaiting_support"
+        self._set_user_state(user_id, "awaiting_support")
         self._send_message(chat_id, self._get_message("prompt_support", default="Please describe your issue and we will get back to you:"))
 
     def _process_support(self, chat_id: int, from_user: Dict[str, Any], text: str) -> None:
@@ -771,11 +811,11 @@ class TelegramEventBot:
             ack = self._get_message("support_fail", default="There was an issue submitting your request. Please try again later.")
         self._send_message(chat_id, ack)
         # Clear state
-        self.user_states.pop(user_id, None)
+        self._clear_user_state(user_id)
 
     def _prompt_feedback(self, chat_id: int, user_id: int) -> None:
         """Prompt the user to enter feedback."""
-        self.user_states[user_id] = "awaiting_feedback"
+        self._set_user_state(user_id, "awaiting_feedback")
         self._send_message(chat_id, self._get_message("prompt_feedback", default="Please send us your feedback:"))
 
     def _process_feedback(self, chat_id: int, from_user: Dict[str, Any], text: str) -> None:
@@ -791,7 +831,7 @@ class TelegramEventBot:
         else:
             ack = self._get_message("feedback_fail", default="Failed to submit feedback. Please try again later.")
         self._send_message(chat_id, ack)
-        self.user_states.pop(user_id, None)
+        self._clear_user_state(user_id)
 
     # ------------------------------------------------------------------
     # Additional interaction helpers for advanced features
@@ -833,7 +873,7 @@ class TelegramEventBot:
         for the person's name.  If the state is not set up correctly
         nothing happens.
         """
-        state = self.user_states.get(user_id)
+        state = self._get_user_state(user_id)
         if not isinstance(state, dict):
             return
         count = state.get("count")
@@ -856,7 +896,7 @@ class TelegramEventBot:
         individually registers participants or adds them to the waitlist.
         Finally it sends a summary to the user and clears the state.
         """
-        state = self.user_states.get(user_id)
+        state = self._get_user_state(user_id)
         if not isinstance(state, dict):
             return
         event_id = state.get("event_id")
@@ -943,7 +983,7 @@ class TelegramEventBot:
             )
         self._send_message(chat_id, "\n".join(summary_lines))
         # Clear state
-        self.user_states.pop(user_id, None)
+        self._clear_user_state(user_id)
 
     def _process_multi_registration(self, chat_id: int, user_id: int, event_id: Any, count: int) -> None:
         """Handle registration for multiple participants, including payment if required."""
@@ -1008,7 +1048,7 @@ class TelegramEventBot:
         else:
             self._send_message(chat_id, self._get_message("registration_failure", default="❌ Failed to register. Please try again later."))
         # Clear state after registration
-        self.user_states.pop(user_id, None)
+        self._clear_user_state(user_id)
 
     def _handle_cancel_via_callback(self, chat_id: int, registration_id: Any) -> None:
         """Cancel a registration from an inline button."""
@@ -1078,6 +1118,8 @@ class TelegramEventBot:
                 updates = self._get_updates(timeout=30)
                 for update in updates:
                     self._dispatch_update(update)
+                # Remove stale user states after each polling cycle
+                self._cleanup_user_states()
                 # Sleep briefly to avoid hammering Telegram in case of
                 # empty updates; Telegram recommends at least a short pause
                 time.sleep(1)
